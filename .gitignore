@@ -1,0 +1,9 @@
+@"
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data.zip
+data/helios/data/
+"@ | Set-Content .gitignore

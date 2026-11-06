@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GPU Resource Allocation</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <div><h1><span class="logo">🧪</span> GPU Resource Allocation</h1>
+  <p>Dynamic allocation and scheduling · discrete-event simulation · Alibaba 2023 + Helios 2020 traces</p></div>
+  <span id="src" class="pill"></span>
+</header>
+<nav id="tabs">
+  <button data-t="lab" class="on">Virtual Lab</button><button data-t="workload">Workload Lab</button>
+  <button data-t="compare">Comparison</button><button data-t="datasets">Datasets</button>
+  <button data-t="exp">Experiments</button><button data-t="docs">Documentation</button>
+</nav>
+<div id="stats"></div>
+<div id="warn"></div>
+
+<section id="lab" class="tab on">
+  <div class="card">
+    <div class="ctl">
+      <label>Policy <select id="pol"></select></label>
+      <label>GPU nodes <input id="nodes" type="number" min="1" max="32"></label>
+      <label>Capacity/node <input id="cap" type="number" min="1000" step="1000" title="milli-GPU (1000 = 1 GPU)"></label>
+      <label>Load preset <select id="preset">
+        <option value="custom">Custom (nodes × capacity)</option><option value="100">Light (100% of peak)</option>
+        <option value="60">Moderate (60%)</option><option value="40">Heavy (40%)</option><option value="25">Overloaded (25%)</option></select></label>
+      <button id="apply">Apply</button>
+    </div>
+    <div class="ctl row2">
+      <button id="play" class="pri">▶ Run</button><button id="pause">⏸ Pause</button>
+      <button id="step">⏭ Next step</button><button id="all">⏩ Run to end</button><button id="reset">↺ Reset</button>
+      <span class="sep"></span><span class="lbl">Speed</span><span id="speeds"></span>
+      <span class="sep"></span>
+      <label>Inject: demand <input id="idem" type="number" value="1000" step="250" title="milli-GPU"></label>
+      <label>duration <input id="idur" type="number" value="30"></label>
+      <label>priority <select id="ipri"><option value="1">Low</option><option value="2" selected>Med</option><option value="3">High</option></select></label>
+      <button id="inject">+ Inject task</button>
+    </div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h2>Task queue <small id="qn"></small></h2><div id="queue"></div></div>
+    <div class="card"><h2>Algorithm visualizer</h2><div id="vz"></div></div>
+    <div class="card"><h2>GPU allocation <small>milli-GPU, 1000 = 1 GPU</small></h2><div id="gpus"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="card chart"><h2>Execution timeline</h2><div class="cv tall"><canvas id="tl"></canvas></div></div>
+    <div class="card"><h2>Event log</h2><div id="log"></div></div>
+  </div>
+</section>
+
+<section id="workload" class="tab">
+  <div class="card"><h2>Load workload</h2>
+    <div class="ctl">
+      <button id="ldsyn">Synthetic (60 tasks)</button><span class="sep"></span>
+      <label>Scale <input id="wscale" type="number" value="3600" title="divide trace seconds by this: 3600 = hours"></label>
+      <label>Max tasks <input id="wmax" type="number" value="300"></label>
+      <label>Max GPUs/job <input id="wgpu" type="number" value="8" min="1" title="Helios only: drop multi-node jobs above this"></label>
+      <button id="ldali">Alibaba 2023 trace</button><button id="ldhel">Helios 2020 trace</button>
+      <span class="sep"></span>
+      <input id="file" type="file" accept=".csv,.gz"><button id="upl">Upload &amp; clean</button>
+    </div>
+    <div id="dsinfo" class="dsrow"></div>
+    <div id="rep"></div>
+  </div>
+  <div class="card"><h2>Tasks <small id="fpg"></small></h2>
+    <div class="ctl">
+      <input id="fq" placeholder="search id">
+      <select id="fs"><option value="">any status</option><option>PENDING</option><option>WAITING</option><option>RUNNING</option><option>COMPLETED</option></select>
+      <select id="fp"><option value="">any priority</option><option value="1">Low</option><option value="2">Med</option><option value="3">High</option></select>
+      <button id="fgo">Filter</button><button id="fprev">◀</button><button id="fnext">▶</button>
+    </div>
+    <div class="scroll"><table id="ttab"></table></div>
+  </div>
+</section>
+
+<section id="compare" class="tab">
+  <div class="card"><h2>FIFO · SJF · IEEE-inspired · Proposed <small>identical workload and cluster</small></h2>
+    <div class="ctl">
+      <label>Dataset <select id="cds" class="dssel"></select></label>
+      <label>Nodes <input id="cn" type="number" min="1" max="32"></label>
+      <label>Load level <select id="cl">
+        <option value="100">Light: cluster = 100% of peak</option><option value="60">Moderate: 60%</option>
+        <option value="40" selected>Heavy: 40%</option><option value="25">Overloaded: 25%</option>
+        <option value="manual">Manual: nodes × capacity</option></select></label>
+      <label>Capacity/node <input id="cc" type="number" min="1000" step="1000"></label>
+      <button id="runcmp" class="pri">▶ Compare policies</button>
+      <a class="btn" href="/api/export/compare.csv">⬇ CSV</a>
+    </div>
+    <p id="cmpnote" class="mut"></p><div class="scroll"><table id="cmpt"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="card chart"><div class="cv"><canvas id="c1"></canvas></div></div>
+    <div class="card chart"><div class="cv"><canvas id="c2"></canvas></div></div>
+  </div>
+</section>
+
+<section id="datasets" class="tab">
+  <div class="card"><h2>Dataset comparison <small>Alibaba 2023 vs Helios 2020, same policies, same relative load</small></h2>
+    <div class="ctl">
+      <label>Load level <select id="dl">
+        <option value="100">Light: 100% of each peak</option><option value="60">Moderate: 60%</option>
+        <option value="40" selected>Heavy: 40%</option><option value="25">Overloaded: 25%</option>
+        <option value="manual">Same fixed cluster (nodes × capacity below)</option></select></label>
+      <label>Nodes <input id="dn" type="number" min="1" max="32" value="4"></label>
+      <label>Capacity/node <input id="dc" type="number" min="1000" step="1000" value="8000"></label>
+      <label>Scale <input id="dsc" type="number" value="3600"></label>
+      <label>Tasks per dataset <input id="dmx" type="number" value="300"></label>
+      <button id="rundat" class="pri">▶ Compare datasets</button>
+      <a class="btn" href="/api/export/datasets.csv">⬇ CSV</a>
+    </div>
+    <p id="datnote" class="mut">Both trace files must be in <code>data/alibaba/</code> and <code>data/helios/</code>.</p>
+    <div id="datsum"></div>
+    <div class="scroll"><table id="datt"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="card chart"><div class="cv"><canvas id="d1"></canvas></div></div>
+    <div class="card chart"><div class="cv"><canvas id="d2"></canvas></div></div>
+    <div class="card chart"><div class="cv"><canvas id="d3"></canvas></div></div>
+    <div class="card chart"><div class="cv"><canvas id="d4"></canvas></div></div>
+  </div>
+</section>
+
+<section id="exp" class="tab">
+  <div class="card"><h2>Scaling experiments</h2>
+    <div class="ctl">
+      <label>Dataset <select id="eds" class="dssel"></select></label>
+      <select id="ek"><option value="workload">Workload scaling (task counts)</option><option value="gpu">GPU scaling (node counts)</option>
+        <option value="load">Load scaling (% of peak demand)</option></select>
+      <input id="ev" value="20,40,60" size="14"><button id="runexp" class="pri">▶ Run</button>
+      <a id="dlexp" class="btn" href="/api/export/experiment.csv">⬇ CSV</a>
+    </div>
+    <p id="expnote" class="mut"></p>
+    <div class="scroll"><table id="expt"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="card chart"><div class="cv"><canvas id="c3"></canvas></div></div>
+    <div class="card chart"><div class="cv"><canvas id="c4"></canvas></div></div>
+  </div>
+</section>
+
+<section id="docs" class="tab"><div class="card doc" id="docbody"></div></section>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
